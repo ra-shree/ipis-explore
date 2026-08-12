@@ -326,7 +326,9 @@ with tab_map:
         else:
             display = ward_df.select(
                 pl.col("post_id").replace_strict(POST_NAMES).alias("Post"),
-                pl.col("candidate_name_en").alias("Candidate"),
+                pl.coalesce(
+                    pl.col("candidate_name_en"), pl.col("candidate_name_np")
+                ).alias("Candidate"),
                 pl.col("party_name_en").alias("Party"),
                 pl.col("total_votes").alias("Votes"),
                 pl.col("remarks_en").fill_null("—").alias("Result"),
