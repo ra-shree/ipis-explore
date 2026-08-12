@@ -139,3 +139,42 @@ def tier_counts(head_race: pl.DataFrame) -> dict[str, int]:
     counts = head_race.group_by("tier").agg(pl.len().alias("count"))
     lookup = dict(zip(counts["tier"].to_list(), counts["count"].to_list()))
     return {tier: lookup.get(tier, 0) for tier in TIER_ORDER}
+
+
+def compute_tier_changes(old_head_race: pl.DataFrame, new_head_race: pl.DataFrame) -> pl.DataFrame:
+    """Per-palika tier movement between two elections' head-race results.
+
+    Restricted to palikas with a real tier in both years -- 2074 has no
+    Madhesh Province data, so those palikas have no old-year tier to diff.
+    """
+    tier_rank = {tier: i for i, tier in enumerate(TIER_ORDER)}
+
+    old = old_head_race.filter(pl.col("tier") != NO_DATA_TIER).select(
+        "palika_id",
+        pl.col("tier").alias("tier_old"),
+        pl.col("margin").alias("margin_old"),
+    )
+    new = new_head_race.filter(pl.col("tier") != NO_DATA_TIER).select(
+        "palika_id",
+        pl.col("tier").alias("tier_new"),
+        pl.col("margin").alias("margin_new"),
+    )
+
+    return old.join(new, on="palika_id", how="inner").with_columns(
+        # Positive = moved toward Stronghold (improved for NC); negative = toward Opposition.
+        shift=pl.col("tier_old").replace_strict(tier_rank) - pl.col("tier_new").replace_strict(tier_rank),
+        margin_change=pl.col("margin_new") - pl.col("margin_old"),
+    )
+
+
+def tier_transition_matrix(changes: pl.DataFrame) -> pl.DataFrame:
+    """Dense palika counts for every (old tier, new tier) pair, in TIER_ORDER."""
+    counts = changes.group_by(["tier_old", "tier_new"]).agg(pl.len().alias("count"))
+    lookup = dict(zip(zip(counts["tier_old"], counts["tier_new"]), counts["count"].to_list()))
+    return pl.DataFrame(
+        [
+            {"tier_old": old, "tier_new": new, "count": lookup.get((old, new), 0)}
+            for old in TIER_ORDER
+            for new in TIER_ORDER
+        ]
+    )
