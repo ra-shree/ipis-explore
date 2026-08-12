@@ -9,10 +9,6 @@ PROCESSED_DIR = ROOT / "storage" / "processed"
 
 NC_PARTY_ID = 1
 
-# post_id -> role, per storage/processed/posts.parquet. The election data also
-# carries a handful of post_ids (9-12) that aren't defined in posts.parquet and
-# don't resolve to a known role -- those are dropped everywhere below rather
-# than guessed at.
 POST_NAMES = {
     1: "Chairperson",
     2: "Vice-Chairperson",
@@ -44,10 +40,10 @@ def _derive_palika_type() -> pl.Expr:
     # Source data misspells "Metropolitan" as "Metropolitian" throughout.
     name = pl.col("palika_name_en")
     return (
-        pl.when(name.str.contains("Metropolitian City"))
-        .then(pl.lit("Metropolitan City"))
-        .when(name.str.contains("Sub-Metropolitian City"))
+        pl.when(name.str.contains("Sub-Metropolitian City"))
         .then(pl.lit("Sub-Metropolitan City"))
+        .when(name.str.contains("Metropolitian City"))
+        .then(pl.lit("Metropolitan City"))
         .when(name.str.contains("Rural Municipality"))
         .then(pl.lit("Rural Municipality"))
         .otherwise(pl.lit("Municipality"))

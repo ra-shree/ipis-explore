@@ -67,11 +67,6 @@ def get_layout_coords(palika_ids: tuple[int, ...]) -> dict[int, tuple[float, flo
     return coords
 
 
-# ---------------------------------------------------------------------------
-# Small UI helpers
-# ---------------------------------------------------------------------------
-
-
 def tier_badge(tier: str) -> str:
     bg = TIER_COLORS[tier]
     fg = TIER_TEXT_ON_FILL[tier]
@@ -109,7 +104,6 @@ if year is None:
     year = years[0]
 
 head_race = get_head_race(year)
-counts = tier_counts(head_race)
 
 st.sidebar.markdown("### Palika type")
 type_filter = st.sidebar.segmented_control(
@@ -134,6 +128,8 @@ if search.strip():
         pl.col("palika_name_en").str.to_lowercase().str.contains(needle, literal=True)
         | pl.col("palika_name_np").str.contains(needle, literal=True)
     )
+
+counts = tier_counts(filtered)
 
 st.sidebar.markdown(f"**{filtered.height} / {head_race.height} palikas**")
 
@@ -164,11 +160,14 @@ if selected_rows:
 # ---------------------------------------------------------------------------
 
 st.markdown(f"## Nepal — Palika strategic tier map <span style='color:{MUTED_TEXT};font-size:1rem;'>({year})</span>", unsafe_allow_html=True)
+st.caption(f"{filtered.height} of {head_race.height} palikas shown")
 
+# Coordinates are seeded on the full palika set so a point's position stays
+# fixed as filters change -- filtering removes dots rather than reshuffling them.
 coords = get_layout_coords(tuple(head_race["palika_id"].to_list()))
-xs = [coords[pid][0] for pid in head_race["palika_id"]]
-ys = [coords[pid][1] for pid in head_race["palika_id"]]
-plot_df = head_race.with_columns(x=pl.Series(xs), y=pl.Series(ys))
+xs = [coords[pid][0] for pid in filtered["palika_id"]]
+ys = [coords[pid][1] for pid in filtered["palika_id"]]
+plot_df = filtered.with_columns(x=pl.Series(xs), y=pl.Series(ys))
 
 fig = go.Figure()
 for tier in [*TIER_ORDER, NO_DATA_TIER]:
