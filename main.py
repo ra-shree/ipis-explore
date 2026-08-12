@@ -23,6 +23,19 @@ from lib.tiers import (
 
 st.set_page_config(page_title="Nepal — Palika strategic tier map", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    div[data-testid="stMetricValue"] {
+        font-size: 1.4rem;
+        white-space: normal;
+        overflow-wrap: break-word;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 PALIKA_TYPES = ["Metropolitan City", "Sub-Metropolitan City", "Municipality", "Rural Municipality"]
 MUTED_TEXT = "#898781"
 
