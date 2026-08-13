@@ -25,6 +25,10 @@ KNOWN_POST_IDS = tuple(POST_NAMES)
 # metros) -- mutually exclusive per palika, exactly one of the two applies.
 HEAD_POST_IDS = (1, 3)
 
+# Full head-of-palika race including deputies -- palika-wide, not tied to any
+# ward (their `ward` column is null), unlike WARD_RACE_POST_IDS below.
+HEAD_RACE_POST_IDS = (1, 2, 3, 4)
+
 # Ward-level races: every ward elects all four regardless of palika type.
 WARD_CHAIR_POST_ID = 5
 WARD_RACE_POST_IDS = (5, 6, 7, 8)

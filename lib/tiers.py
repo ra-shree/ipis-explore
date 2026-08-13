@@ -4,6 +4,7 @@ import polars as pl
 
 from lib.data import (
     HEAD_POST_IDS,
+    HEAD_RACE_POST_IDS,
     NC_PARTY_ID,
     WARD_CHAIR_POST_ID,
     WARD_RACE_POST_IDS,
@@ -126,13 +127,35 @@ def compute_ward_seats(election: pl.DataFrame, palikas: pl.DataFrame) -> pl.Data
     )
 
 
+def _elected_expr() -> pl.Expr:
+    # fill_null(False): is_in() returns null (not False) for null remarks_en,
+    # and nulls sort last regardless of descending -- without this, unelected
+    # candidates with no remarks would silently outrank the elected one.
+    return pl.col("remarks_en").is_in(["Elected", "Unopposed"]).fill_null(False)
+
+
+def head_race_detail(election: pl.DataFrame, palika_id: int) -> pl.DataFrame:
+    """Elected candidate plus the next 4 highest-vote candidates, per post, for
+    the head-of-palika race (Chairperson/Vice-Chairperson or Mayor/Deputy
+    Mayor) of one palika.
+
+    This race is palika-wide, not per-ward -- its rows carry a null `ward`,
+    so it's never reachable through ward_detail()'s ward filter.
+    """
+    detail = election.filter(
+        (pl.col("palika_id") == palika_id) & pl.col("post_id").is_in(HEAD_RACE_POST_IDS)
+    ).sort(["post_id", _elected_expr(), "total_votes"], descending=[False, True, True])
+    return detail.filter(pl.int_range(pl.len()).over("post_id") < 5)
+
+
 def ward_detail(election: pl.DataFrame, palika_id: int, ward: int) -> pl.DataFrame:
-    """Candidate-level results for every ward-level race in one ward of one palika."""
+    """Candidate-level results for every ward-level race in one ward of one
+    palika, elected candidate first within each post."""
     return election.filter(
         (pl.col("palika_id") == palika_id)
         & (pl.col("ward") == ward)
         & pl.col("post_id").is_in(WARD_RACE_POST_IDS)
-    ).sort(["post_id", "total_votes"], descending=[False, True])
+    ).sort(["post_id", _elected_expr(), "total_votes"], descending=[False, True, True])
 
 
 def tier_counts(head_race: pl.DataFrame) -> dict[str, int]:

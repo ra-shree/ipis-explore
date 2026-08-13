@@ -16,6 +16,7 @@ from lib.tiers import (
     compute_head_race,
     compute_tier_changes,
     compute_ward_seats,
+    head_race_detail,
     tier_counts,
     tier_transition_matrix,
     ward_detail,
@@ -315,6 +316,22 @@ with tab_map:
             st.metric("Ward seats (NC)", f"{nc_seats} / {total_wards}")
         with detail_cols[3]:
             st.metric("Leader", row["leader_party"] or "—")
+
+        st.markdown("#### Head of Palika detail")
+        head_df = head_race_detail(get_election(year), selected_palika_id)
+        if head_df.height == 0:
+            st.caption("No candidate data for the head-of-palika race.")
+        else:
+            head_display = head_df.select(
+                pl.col("post_id").replace_strict(POST_NAMES).alias("Post"),
+                pl.coalesce(
+                    pl.col("candidate_name_en"), pl.col("candidate_name_np")
+                ).alias("Candidate"),
+                pl.col("party_name_en").alias("Party"),
+                pl.col("total_votes").alias("Votes"),
+                pl.col("remarks_en").fill_null("—").alias("Result"),
+            )
+            st.dataframe(head_display, hide_index=True, width="stretch")
 
         st.markdown("#### Ward detail")
         ward_options = list(range(1, total_wards + 1))
