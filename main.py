@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-import random
-
+import folium
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
+from streamlit_folium import st_folium
 
 from lib.data import POST_NAMES, available_years, load_election, load_palikas
+from lib.geo import (
+    bounds_of_features,
+    enrich_municipalities,
+    enrich_provinces,
+    load_municipality_geojson,
+    load_province_geojson,
+)
 from lib.tiers import (
     NO_DATA_TIER,
     STRONGHOLD_MARGIN,
@@ -14,6 +21,7 @@ from lib.tiers import (
     TIER_ORDER,
     TIER_TEXT_ON_FILL,
     compute_head_race,
+    compute_province_tier,
     compute_tier_changes,
     compute_ward_seats,
     head_race_detail,
@@ -84,15 +92,8 @@ def get_tier_changes(year_old: int, year_new: int) -> pl.DataFrame:
 
 
 @st.cache_data
-def get_layout_coords(palika_ids: tuple[int, ...]) -> dict[int, tuple[float, float]]:
-    # Stable pseudo-random position per palika (no geographic data exists, and
-    # the mockup this is modeled on isn't a real map either) -- seeded on
-    # palika_id so points don't jump around between filters/reruns.
-    coords = {}
-    for pid in palika_ids:
-        rng = random.Random(pid)
-        coords[pid] = (rng.uniform(0, 1), rng.uniform(0, 1))
-    return coords
+def get_province_tier(year: int) -> pl.DataFrame:
+    return compute_province_tier(get_head_race(year))
 
 
 def tier_badge(tier: str) -> str:
@@ -226,62 +227,57 @@ with tab_map:
     st.markdown(f"## Nepal — Palika strategic tier map <span style='color:{MUTED_TEXT};font-size:1rem;'>({year})</span>", unsafe_allow_html=True)
     st.caption(f"{filtered.height} of {head_race.height} palikas shown")
 
-    # Coordinates are seeded on the full palika set so a point's position stays
-    # fixed as filters change -- filtering removes dots rather than reshuffling them.
-    coords = get_layout_coords(tuple(head_race["palika_id"].to_list()))
-    xs = [coords[pid][0] for pid in filtered["palika_id"]]
-    ys = [coords[pid][1] for pid in filtered["palika_id"]]
-    plot_df = filtered.with_columns(x=pl.Series(xs), y=pl.Series(ys))
+    # Palikas the sidebar filters excluded (but demo mode/year didn't) render
+    # muted on the map rather than disappearing, so the choropleth never
+    # shows a hole beyond the ones geometry genuinely can't fill.
+    muted_pids = set(head_race["palika_id"]) - set(filtered["palika_id"])
+    include_pids = set(head_race["palika_id"]) if demo_mode else None
 
-    fig = go.Figure()
-    for tier in [*TIER_ORDER, NO_DATA_TIER]:
-        tdf = plot_df.filter(pl.col("tier") == tier)
-        if tdf.height == 0:
-            continue
-        is_selected = tdf["palika_id"] == selected_palika_id if selected_palika_id else None
-        marker_line = (
-            [3 if pid == selected_palika_id else 1 for pid in tdf["palika_id"]]
-            if selected_palika_id
-            else 1
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=tdf["x"],
-                y=tdf["y"],
-                mode="markers",
-                name=tier,
-                marker=dict(
-                    size=14,
-                    color=TIER_COLORS[tier],
-                    line=dict(width=marker_line, color="#fcfcfb"),
-                    opacity=0.9,
-                ),
-                customdata=tdf.select(
-                    "palika_name_en", "province_name_en", "tier", "margin", "palika_id"
-                ).to_numpy(),
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b><br>"
-                    "%{customdata[1]}<br>"
-                    "%{customdata[2]} · margin %{customdata[3]:+.1%}"
-                    "<extra></extra>"
-                ),
-            )
-        )
-
-    fig.update_layout(
-        height=440,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        plot_bgcolor="#fcfcfb",
-        paper_bgcolor="#fcfcfb",
+    municipalities = enrich_municipalities(
+        load_municipality_geojson(), head_race, muted_pids, selected_palika_id, include_pids=include_pids
     )
+    provinces = enrich_provinces(load_province_geojson(), get_province_tier(year))
 
-    click_event = st.plotly_chart(fig, width="stretch", on_select="rerun", selection_mode="points")
-    if click_event and click_event.selection and click_event.selection.points:
-        point = click_event.selection.points[0]
-        selected_palika_id = int(point["customdata"][4])
+    fmap = folium.Map(location=[28.3949, 84.1240], zoom_start=7, tiles="cartodbpositron")
+
+    folium.GeoJson(
+        provinces,
+        style_function=lambda f: {
+            "fillColor": f["properties"]["_fill"],
+            "fillOpacity": f["properties"]["_fill_opacity"],
+            "color": "#fcfcfb",
+            "weight": 1,
+        },
+    ).add_to(fmap)
+
+    folium.GeoJson(
+        municipalities,
+        style_function=lambda f: {
+            "fillColor": f["properties"]["_fill"],
+            "fillOpacity": f["properties"]["_fill_opacity"],
+            "color": f["properties"]["_border_color"],
+            "weight": f["properties"]["_border_weight"],
+        },
+        highlight_function=lambda f: {"weight": 2, "color": "#0b0b0b"},
+        tooltip=folium.GeoJsonTooltip(
+            fields=["palika_name_en", "province_name_en", "tier", "margin_display"],
+            aliases=["Palika", "Province", "Tier", "Margin"],
+        ),
+    ).add_to(fmap)
+
+    if demo_mode:
+        bounds = bounds_of_features(municipalities)
+        if bounds:
+            min_lat, min_lon, max_lat, max_lon = bounds
+            fmap.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]])
+
+    map_state = st_folium(
+        fmap, width=None, height=440, key="tier_map", returned_objects=["last_active_drawing"]
+    )
+    clicked = (map_state or {}).get("last_active_drawing") or {}
+    clicked_pid = (clicked.get("properties") or {}).get("palika_id")
+    if clicked_pid is not None:
+        selected_palika_id = int(clicked_pid)
 
     cols = st.columns(4)
     for col, tier in zip(cols, TIER_ORDER):

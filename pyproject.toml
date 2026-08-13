@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "folium>=0.20.0",
     "ipykernel>=7.3.0",
     "plotly>=6.9.0",
     "polars>=1.43.2",
     "streamlit>=1.61.1",
+    "streamlit-folium>=0.27.4",
 ]

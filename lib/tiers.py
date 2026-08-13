@@ -158,6 +158,21 @@ def ward_detail(election: pl.DataFrame, palika_id: int, ward: int) -> pl.DataFra
     ).sort(["post_id", _elected_expr(), "total_votes"], descending=[False, True, True])
 
 
+def compute_province_tier(head_race: pl.DataFrame) -> pl.DataFrame:
+    """One row per province_id: race_total_votes-weighted average NC margin
+    across that province's palikas, excluding NO_DATA_TIER palikas from the
+    weighting, bucketed with the same _tier_expr thresholds as the palika-
+    level tier. Expects `head_race` to already carry `province_id` and
+    `race_total_votes` (i.e. the output of get_head_race(year), not raw
+    compute_head_race()).
+    """
+    weighted = head_race.filter(pl.col("tier") != NO_DATA_TIER)
+    agg = weighted.group_by("province_id").agg(
+        margin=(pl.col("margin") * pl.col("race_total_votes")).sum() / pl.col("race_total_votes").sum()
+    )
+    return agg.with_columns(tier=_tier_expr(pl.col("margin")))
+
+
 def tier_counts(head_race: pl.DataFrame) -> dict[str, int]:
     counts = head_race.group_by("tier").agg(pl.len().alias("count"))
     lookup = dict(zip(counts["tier"].to_list(), counts["count"].to_list()))
